@@ -1,0 +1,552 @@
+{
+  "name": "HR ATS",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "YOUR_WEBHOOK_PATH",
+        "responseMode": "lastNode",
+        "responseData": "noData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-848, -592],
+      "id": "eb65fd52-0490-47cd-9560-fa73e0336a56",
+      "name": "Webhook",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "cv_file",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [-624, -592],
+      "id": "8324df10-3f26-4ffb-b746-3e669b477922",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "operation": "clearDeduplicationHistory",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [-400, -592],
+      "id": "bde59060-2d42-4865-b25b-4c42503b75d8",
+      "name": "Remove Duplicates"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a senior HR recruiter. Carefully read the CV below and evaluate the candidate.\n\nCV TEXT:\n{{ $('Extract from File').item.json.text }}\n- Position Applied For: \n\nCANDIDATE DETAILS FROM FORM:\n- Full Name: {{ $('Webhook').item.json.body.fullName }}\n- Email: {{ $('Webhook').item.json.body.emailAddress }}\n- Position Applied For: {{ $('Webhook').item.json.body.positionApplyingFor }}\n- Years of Experience: {{ $('Webhook').item.json.body.yearsOfExperience }}\n- Cover Letter: {{ $('Webhook').item.json.body.coverLetter }}\n\nBased on the CV and details above, evaluate this candidate and return ONLY a valid JSON object in this exact format, nothing else before or after it:\n\n{\n  \"name\": \"candidate full name\",\n  \"email\": \"candidate email\",\n  \"position\": \"position they applied for\",\n  \"score\": 0,\n  \"verdict\": \"Accepted\",\n  \"strengths\": \"brief note on top strengths\",\n  \"reason\": \"clear reason for this verdict\"\n}\n\nVERDICT RULES — you must follow these strictly:\n- \"Accepted\" → score is 70 or above, candidate is a strong fit\n- \"Consideration\" → score is 40 to 69, candidate has potential but needs human review\n- \"Rejected\" → score is below 40, candidate is not a fit\n\nSCORING GUIDE:\n- Relevant work experience: up to 40 points\n- Skills match for the role: up to 30 points\n- Quality of cover letter: up to 20 points\n- Education and certifications: up to 10 points\n\nReturn ONLY the JSON. No explanation, no markdown, no code blocks.",
+        "options": {
+          "systemMessage": "=You are an expert HR recruiter. Read the CV below and evaluate the candidate for - Position Applied For: \n{{ $('Webhook').item.json.body.positionApplyingFor }}. Score them and classify them as: Accepted, Rejected, or Consideration. Return a JSON object with: name, email, score (0–100), verdict, and reason."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [-176, -592],
+      "id": "54f51021-86d4-4916-b9d0-0fc7e5d95667",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the AI's raw output text\nconst rawOutput = $input.first().json.output;\n\n// Clean it up - remove markdown code blocks if AI added them\nconst cleaned = rawOutput\n  .replace(/```json/gi, '')\n  .replace(/```/g, '')\n  .trim();\n\n// Parse it into a proper JSON object\nconst parsed = JSON.parse(cleaned);\n\n// Return it cleanly for the next nodes to use\nreturn [{ json: parsed }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [176, -592],
+      "id": "ab02ade4-94bd-4858-b747-88c37722855d",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [-112, -368],
+      "id": "961ab896-5d06-4868-b7f2-fb4e63337596",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "YOUR_GEMINI_CREDENTIAL_ID",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [848, -784],
+      "id": "d8782bd0-dc9e-4ef5-ac55-9d6a63a8f069",
+      "name": "Wait",
+      "webhookId": "YOUR_WAIT_WEBHOOK_ID_1"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_URL",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Accepted"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Position": "={{ $('Webhook').item.json.body.positionApplyingFor }}",
+            "Email": "={{ $('Webhook').item.json.body.emailAddress }}",
+            "Name": "={{ $('Webhook').item.json.body.fullName }}",
+            "Score": "={{ $json.score }}",
+            "Verdict": "={{ $json.verdict }}",
+            "Strengths": "={{ $json.strengths }}",
+            "Reason": "={{ $json.reason }}"
+          },
+          "matchingColumns": ["Email"],
+          "schema": [
+            { "id": "Name", "displayName": "Name", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Email", "displayName": "Email", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Position", "displayName": "Position", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Score", "displayName": "Score", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Verdict", "displayName": "Verdict", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Strengths", "displayName": "Strengths", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Reason", "displayName": "Reason", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [624, -784],
+      "id": "9dd20f71-56b7-4b5a-8c1c-f5c8c8526527",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_URL",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Accepted"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Email",
+              "lookupValue": "={{ $node[\"Wait\"].json[\"Email\"] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [1072, -784],
+      "id": "840289c5-7433-4d96-af0a-0aec4a14f008",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.Status }}",
+                    "rightValue": "Invite",
+                    "operator": { "type": "string", "operation": "empty", "singleValue": true },
+                    "id": "bf832e2c-9413-49a2-a324-67949854d3d6"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Send invitation"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+                "conditions": [
+                  {
+                    "id": "f2aa43c4-5f4a-4fc8-b26a-b5d43d959eb1",
+                    "leftValue": "={{ $json.Status }}",
+                    "rightValue": "Review",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Move to Consideration"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [1296, -784],
+      "id": "4196a790-3096-4418-a96c-86c566ab03c4",
+      "name": "Switch1"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.Email }}",
+        "subject": "=Interview Invitation – {{ $json.Name }}",
+        "message": "=<p>Hi {{ $json.Name }},</p>\n\n<p>We'd love to invite you to an interview for the {{ $json.Position }} role.</p>\n<p>Please use this link to find a time that works for you:</p>\n<p><a href=\"YOUR_BOOKING_LINK_HERE\">Schedule Interview</a></p>\n\n<p>Best regards,<br>The Hiring Team</p>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [1520, -832],
+      "id": "909c6824-57ee-4544-8b0c-6bd4f2b27121",
+      "name": "Send a message",
+      "webhookId": "YOUR_GMAIL_WEBHOOK_ID_1",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_URL",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "YOUR_REJECTED_SHEET_GID",
+          "mode": "list",
+          "cachedResultName": "Rejected"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Name": "={{ $('Code in JavaScript').item.json.name }}",
+            "Email": "={{ $('Code in JavaScript').item.json.email }}",
+            "AI Reason": "={{ $('Code in JavaScript').item.json.reason }}",
+            "AI Score": "={{ $('Code in JavaScript').item.json.score }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            { "id": "Name", "displayName": "Name", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Email", "displayName": "Email", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "AI Reason", "displayName": "AI Reason", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "AI Score", "displayName": "AI Score", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [624, -592],
+      "id": "8b4d607e-8083-417a-aac9-0f7dfa689dbe",
+      "name": "Append row in sheet1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [864, -624],
+      "id": "4a131d43-f26f-4509-b290-bb21c87deda7",
+      "name": "Wait1",
+      "webhookId": "YOUR_WAIT_WEBHOOK_ID_2"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.Email }}",
+        "subject": "Update regarding your application",
+        "message": "=<p>Hi {{ $json.Name }},</p>\n\n<p>Thank you very much for giving us the opportunity to review your application for the <strong>{{ $json.Position }}</strong> position at [Your Company Name].</p>\n\n<p>After a careful review of your experience and qualifications, we have decided to move forward with other candidates whose profiles more closely align with our current requirements for this specific role.</p>\n\n<p>We want to thank you for the time and effort you put into your application. We will keep your resume on file for future opportunities that may be a better fit.</p>\n\n<p>We wish you the very best of luck with your job search and future professional endeavors.</p>\n\n<p>Best regards,</p>\n<p>The Recruitment Team</p>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [1104, -624],
+      "id": "1c5fb9ba-d85a-4e42-9b32-4898fd033b11",
+      "name": "Send a message1",
+      "webhookId": "YOUR_GMAIL_WEBHOOK_ID_2",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 3,
+        "output": "={{ $json.verdict === 'Accepted' ? 0 : ($json.verdict === 'Rejected' ? 1 : ($json.verdict === 'Consideration' ? 2 : 3)) }}",
+        "looseTypeValidation": true
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [400, -608],
+      "id": "9753feae-20f3-415c-86f9-99a005b2477c",
+      "name": "Switch2"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_URL",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "YOUR_CONSIDERATION_SHEET_GID",
+          "mode": "list",
+          "cachedResultName": "Consideration"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Name": "={{ $('Code in JavaScript').item.json.name }}",
+            "Email": "={{ $('Code in JavaScript').item.json.email }}",
+            "AI Score": "={{ $('Code in JavaScript').item.json.score }}",
+            "Reason": "={{ $('Code in JavaScript').item.json.reason }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            { "id": "Name", "displayName": "Name", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Email", "displayName": "Email", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Reason", "displayName": "Reason", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "AI Score", "displayName": "AI Score", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Status", "displayName": "Status", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [1520, -496],
+      "id": "3b2c5435-6213-4586-9ba0-886e0df82bb9",
+      "name": "Append row in sheet2",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "YOUR_HR_EMAIL@company.com",
+        "subject": "=⚠️ Action Required: Manual Review for {{ $node[\"Code in JavaScript\"].json[\"name\"] }}",
+        "message": "=<p>Hi HR Team,</p>\n<p>The AI is not confident about this candidate and requires your manual review.</p>\n<p><strong>Name:</strong> {{ $node[\"Code in JavaScript\"].json[\"name\"] }}<br/>\n<strong>Position:</strong> {{ $node[\"Code in JavaScript\"].json[\"position\"] }}<br/>\n<strong>AI Score:</strong> {{ $node[\"Code in JavaScript\"].json[\"score\"] }}<br/>\n<strong>AI Reasoning:</strong> {{ $node[\"Code in JavaScript\"].json[\"reason\"] }}</p>\n<p>Please check the Consideration sheet and update the Status column to either <strong>Invite</strong> or <strong>Reject</strong> to resume the workflow.</p>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [2416, -496],
+      "id": "c29bd04c-d477-4198-8fd7-26b4f0aed947",
+      "name": "Send a message2",
+      "webhookId": "YOUR_GMAIL_WEBHOOK_ID_3",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1744, -496],
+      "id": "617c4a0b-5804-4a06-8a46-edc7a45a1357",
+      "name": "Wait2",
+      "webhookId": "YOUR_WAIT_WEBHOOK_ID_3"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_URL",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "YOUR_CONSIDERATION_SHEET_GID",
+          "mode": "list",
+          "cachedResultName": "Consideration"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Email",
+              "lookupValue": "={{ $node[\"Code in JavaScript\"].json[\"email\"] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [1968, -496],
+      "id": "f2387293-605f-42de-8647-dd0dcb136833",
+      "name": "Get row(s) in sheet1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.Status }}",
+                    "rightValue": "Invite",
+                    "operator": { "type": "string", "operation": "equals" },
+                    "id": "48e7e9e2-71e9-4da5-9094-be0290992a0a"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Manual Invite"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+                "conditions": [
+                  {
+                    "id": "43415d86-e7c0-4b8e-851c-0d998503097c",
+                    "leftValue": "={{ $json.Status }}",
+                    "rightValue": "Reject",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Manual Reject"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [2192, -496],
+      "id": "a0535643-71f4-4cc1-be55-d36e89e160c1",
+      "name": "Switch"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Extract from File", "type": "main", "index": 0 }]] },
+    "Extract from File": { "main": [[{ "node": "Remove Duplicates", "type": "main", "index": 0 }]] },
+    "Remove Duplicates": { "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]] },
+    "AI Agent": { "main": [[{ "node": "Code in JavaScript", "type": "main", "index": 0 }]] },
+    "Code in JavaScript": { "main": [[{ "node": "Switch2", "type": "main", "index": 0 }]] },
+    "Google Gemini Chat Model": { "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]] },
+    "Append row in sheet": { "main": [[{ "node": "Wait", "type": "main", "index": 0 }]] },
+    "Wait": { "main": [[{ "node": "Get row(s) in sheet", "type": "main", "index": 0 }]] },
+    "Get row(s) in sheet": { "main": [[{ "node": "Switch1", "type": "main", "index": 0 }]] },
+    "Switch1": {
+      "main": [
+        [{ "node": "Send a message", "type": "main", "index": 0 }],
+        [{ "node": "Append row in sheet2", "type": "main", "index": 0 }]
+      ]
+    },
+    "Append row in sheet1": { "main": [[{ "node": "Wait1", "type": "main", "index": 0 }]] },
+    "Wait1": { "main": [[{ "node": "Send a message1", "type": "main", "index": 0 }]] },
+    "Switch2": {
+      "main": [
+        [{ "node": "Append row in sheet", "type": "main", "index": 0 }],
+        [{ "node": "Append row in sheet1", "type": "main", "index": 0 }],
+        [{ "node": "Append row in sheet2", "type": "main", "index": 0 }]
+      ]
+    },
+    "Append row in sheet2": { "main": [[{ "node": "Wait2", "type": "main", "index": 0 }]] },
+    "Wait2": { "main": [[{ "node": "Get row(s) in sheet1", "type": "main", "index": 0 }]] },
+    "Get row(s) in sheet1": { "main": [[{ "node": "Switch", "type": "main", "index": 0 }]] },
+    "Switch": { "main": [[{ "node": "Send a message2", "type": "main", "index": 0 }], []] }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "timezone": "YOUR_TIMEZONE",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "REPLACE_WITH_NEW_VERSION_ID",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "REPLACE_WITH_YOUR_INSTANCE_ID"
+  },
+  "id": "REPLACE_WITH_YOUR_WORKFLOW_ID",
+  "tags": []
+}
